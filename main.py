@@ -1,10 +1,12 @@
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
-from PyQt5.QtWidgets import (QApplication, QDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget, QFileDialog)
-from PyQt5.QtGui import QPalette, QColor, QIcon
-from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtWidgets import (QApplication, QDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget, QFileDialog, QMessageBox, QSplashScreen)
+from PyQt5.QtGui import *
+from PyQt5.QtChart import *
+from PyQt5.QtCore import *
 import pandas as pd
 import csv
 import sys
+import time
 
 class WidgetGallery(QDialog):
     def __init__(self, parent=None):
@@ -24,20 +26,32 @@ class WidgetGallery(QDialog):
         self.dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
         self.dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
         self.dark_palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
-
+        self.sourcefilename = ''
+        self.targetfilename = ''
         QApplication.setPalette(self.dark_palette)
         QApplication.setStyle("Fusion")
-       
+        self.ShowSplashscreen()
         self.MainScreenLayout()
 
         mainLayout = QGridLayout()
         mainLayout.addWidget(self.sourcegroupbox, 0, 1)
-        mainLayout.addWidget(self.targetgroupbox, 1, 1)        
-        mainLayout.addWidget(self.exportresultbutton, 2, 1)
-        mainLayout.setColumnStretch(1, 1)
+        mainLayout.addWidget(self.targetgroupbox, 1, 1)     
+        mainLayout.addWidget(self.comparebutton, 2, 1)   
+        mainLayout.addWidget(self.exportresultbutton, 3, 1)        
+        mainLayout.setColumnStretch(1, 2)
         self.setLayout(mainLayout)
 
-
+    def ShowSplashscreen(self):
+        splash_pix = QPixmap('DD.png')
+        splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+        splash.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        splash.setEnabled(False)
+        splash.setMask(splash_pix.mask())
+        splash.show()
+        timer = QElapsedTimer()
+        timer.start()
+        while timer.elapsed() < 2000 :
+            pass
     def MainScreenLayout(self):
         #Groupbox
         self.sourcegroupbox = QGroupBox("Choose the Source File")
@@ -69,8 +83,11 @@ class WidgetGallery(QDialog):
         targetlayout.addWidget(targetFileButton)
         targetlayout.addStretch(1)
         
+        self.comparebutton = QPushButton("Compare Result")
+        self.comparebutton.clicked.connect(self.CreateChart)
+
         self.exportresultbutton = QPushButton("Export Result")
-        self.exportresultbutton.clicked.connect(self.CSVDataPreprocessor)
+        self.exportresultbutton.clicked.connect(self.ExportResultsInCSV)
 
         self.sourcegroupbox.setLayout(sourcelayout)
         self.targetgroupbox.setLayout(targetlayout)
@@ -84,6 +101,7 @@ class WidgetGallery(QDialog):
         self.targettextbox.setText(self.targetfilename)
 
     def ExportResultsInCSV(self):
+        self.CSVDataPreprocessor()
         exportfilename,_ = QFileDialog.getSaveFileName(self,"Save Result File","","CSV Files (*.csv)")
         with open(exportfilename, 'w', newline='') as output_file:
             fieldnames=['ScenarioName','ScenarioRunStatus']
@@ -104,6 +122,10 @@ class WidgetGallery(QDialog):
         return added, removed, modified, same
 
     def CSVDataPreprocessor(self):
+        #Input Exception Handler
+        if self.sourcefilename == '' or self.targetfilename == '':
+            alert = QMessageBox.warning(self,'Alert',"No input file has been chosen",QMessageBox.Ok)
+            return True
         #Source Data preprocessing
         source_df = pd.read_csv(self.sourcefilename, delimiter='\t')
         source_df=source_df[['ScenarioName','ScenarioRunStatus']]
@@ -115,7 +137,52 @@ class WidgetGallery(QDialog):
         target_transpose_df = target_df.set_index('ScenarioName').T
         self.target_df_dict= target_transpose_df.to_dict('list')
         self.added, self.removed, self.modified, self.same = self.CSVComparer()
-        self.ExportResultsInCSV()
+    
+    def StatusCounter(self):
+        self.success=0
+        self.failed=0
+
+        for item in self.modified.keys():
+            if str(self.target_df_dict[item]).strip() == 'Completed Sucessfully':
+                self.success+=1
+            elif str(self.target_df_dict[item]).strip() == 'Completed With Errors':
+                self.failed+=1
+
+    def CreateChart(self):
+        if(self.CSVDataPreprocessor()):
+            return
+        self.StatusCounter()
+        if self.success == 0 or self.failed==0:
+            alert = QMessageBox.warning(self,'Alert',"No Difference Between Both Reports",QMessageBox.Ok)
+            return
+        data = {
+        "Success": (self.success, QColor("green")),
+        "Failed": (self.failed, QColor("red")),
+        }
+
+        series = QPieSeries()
+
+        for name, (value, color) in data.items():
+            _slice = series.append(name, value)
+            _slice.setBrush(color)
+
+        chart = QChart()
+        chart.legend().setAlignment(Qt.AlignBottom)
+        chart.setAnimationOptions(QChart.SeriesAnimations)
+        chart.setTheme(QChart.ChartThemeDark)
+        chart.addSeries(series)
+        chartview = QChartView(chart)
+        chartview.setRenderHint(QPainter.Antialiasing)
+
+        self.chartdialog = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowTitleHint)
+        self.chartdialog.setWindowIcon(QIcon("icon.ico"))
+        self.chartdialog.setWindowTitle("Regression Comparison Chart")
+
+        chartlayout = QHBoxLayout()
+        chartlayout.addWidget(chartview)
+        self.chartdialog.setLayout(chartlayout)
+        self.chartdialog.resize(500,500)
+        self.chartdialog.show()
 
 if __name__ == '__main__':
     appctxt = QApplication(sys.argv)
