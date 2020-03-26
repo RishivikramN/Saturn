@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import (QApplication, QDialog, QGridLayout, QGroupBox, QHBo
 from PyQt5.QtGui import *
 from PyQt5.QtChart import *
 from PyQt5.QtCore import *
-import pandas as pd
 import csv
 import sys
 import time
@@ -26,11 +25,15 @@ class WidgetGallery(QDialog):
         self.dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
         self.dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
         self.dark_palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+        self.source_df_dict={}
+        self.target_df_dict={}
+        self.target_df_modulename={}
+        self.target_df_error={}
         self.sourcefilename = ''
         self.targetfilename = ''
         QApplication.setPalette(self.dark_palette)
         QApplication.setStyle("Fusion")
-        self.ShowSplashscreen()
+        #self.ShowSplashscreen()
         self.MainScreenLayout()
 
         mainLayout = QGridLayout()
@@ -101,15 +104,16 @@ class WidgetGallery(QDialog):
         self.targettextbox.setText(self.targetfilename)
 
     def ExportResultsInCSV(self):
-        self.CSVDataPreprocessor()
+        if(self.CSVDataPreprocessor()):
+            return 
         exportfilename,_ = QFileDialog.getSaveFileName(self,"Save Result File","","CSV Files (*.csv)")
         with open(exportfilename, 'w', newline='') as output_file:
-            fieldnames=['ScenarioName','ScenarioRunStatus']
+            fieldnames=['ScenarioName','ScenarioRunStatus','ModuleName','Error']
             writer = csv.DictWriter(output_file,fieldnames=fieldnames)
             writer.writeheader()
             
             for item in self.modified:
-                writer.writerow({'ScenarioName':item,'ScenarioRunStatus':self.target_df_dict[item]})
+                writer.writerow({'ScenarioName':item,'ScenarioRunStatus':self.target_df_dict[item],'ModuleName':self.target_df_modulename[item],'Error':self.target_df_error[item]})
 
     def CSVComparer(self):
         source_keys = set(self.source_df_dict.keys())
@@ -122,32 +126,48 @@ class WidgetGallery(QDialog):
         return added, removed, modified, same
 
     def CSVDataPreprocessor(self):
+        maxInt = sys.maxsize
         #Input Exception Handler
         if self.sourcefilename == '' or self.targetfilename == '':
             alert = QMessageBox.warning(self,'Alert',"No input file has been chosen",QMessageBox.Ok)
             return True
         #Source Data preprocessing
-        source_df = pd.read_csv(self.sourcefilename, delimiter='\t')
-        source_df=source_df[['ScenarioName','ScenarioRunStatus']]
-        source_transpose_df = source_df.set_index('ScenarioName').T
-        self.source_df_dict= source_transpose_df.to_dict('list')
+        while True:
+            try:
+                csv.field_size_limit(maxInt)
+                with open(self.sourcefilename, mode='r') as csv_file:
+                    csv_reader = csv.DictReader(csv_file,delimiter='\t')
+                    for row in csv_reader:
+                        self.source_df_dict.update(dict({row["ScenarioName"]:row["ScenarioRunStatus"]}))
+                    break
+            except OverflowError:
+                maxInt = int(maxInt/10)
         #Target Data preprocessing
-        target_df = pd.read_csv(self.targetfilename, delimiter='\t')
-        target_df=target_df[['ScenarioName','ScenarioRunStatus']]
-        target_transpose_df = target_df.set_index('ScenarioName').T
-        self.target_df_dict= target_transpose_df.to_dict('list')
+        while True:
+            try:
+                csv.field_size_limit(maxInt)
+                with open(self.targetfilename, mode='r') as csv_file:
+                    csv_reader = csv.DictReader(csv_file,delimiter='\t')
+                    for row in csv_reader:
+                        self.target_df_dict.update(dict({row["ScenarioName"]:row["ScenarioRunStatus"]}))
+                        self.target_df_modulename.update(dict({row["ScenarioName"]:row["ModuleName"]}))
+                        self.target_df_error.update(dict({row['ScenarioName']:row["Error"]}))
+                    break
+            except OverflowError:
+                maxInt = int(maxInt/10)
         self.added, self.removed, self.modified, self.same = self.CSVComparer()
     
     def StatusCounter(self):
         self.success=0
         self.failed=0
-
+        self.running=0
         for item in self.modified.keys():
-            if str(self.target_df_dict[item]).strip() == 'Completed Sucessfully':
+            if str(self.target_df_dict[item]) == 'Completed Sucessfully':
                 self.success+=1
-            elif str(self.target_df_dict[item]).strip() == 'Completed With Errors':
+            elif str(self.target_df_dict[item]) == 'Completed With Errors':
                 self.failed+=1
-
+            elif str(self.target_df_dict[item]) == 'Running':
+                self.running+=1
     def CreateChart(self):
         if(self.CSVDataPreprocessor()):
             return
@@ -156,28 +176,30 @@ class WidgetGallery(QDialog):
             alert = QMessageBox.warning(self,'Alert',"No Difference Between Both Reports",QMessageBox.Ok)
             return
         data = {
-        "Success": (self.success, QColor("green")),
-        "Failed": (self.failed, QColor("red")),
+        "Success=="+str(self.success): (self.success, QColor("green")),
+        "Failed=="+str(self.failed): (self.failed, QColor("red")),
+        "Running=="+str(self.running): (self.running, QColor("yellow"))
         }
 
         series = QPieSeries()
-
+        
         for name, (value, color) in data.items():
             _slice = series.append(name, value)
             _slice.setBrush(color)
 
         chart = QChart()
+        
         chart.legend().setAlignment(Qt.AlignBottom)
         chart.setAnimationOptions(QChart.SeriesAnimations)
         chart.setTheme(QChart.ChartThemeDark)
         chart.addSeries(series)
         chartview = QChartView(chart)
         chartview.setRenderHint(QPainter.Antialiasing)
+        
 
-        self.chartdialog = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowTitleHint)
-        self.chartdialog.setWindowIcon(QIcon("icon.ico"))
+        self.chartdialog = QDialog()
         self.chartdialog.setWindowTitle("Regression Comparison Chart")
-
+        
         chartlayout = QHBoxLayout()
         chartlayout.addWidget(chartview)
         self.chartdialog.setLayout(chartlayout)
@@ -185,11 +207,9 @@ class WidgetGallery(QDialog):
         self.chartdialog.show()
 
 if __name__ == '__main__':
-    appctxt = QApplication(sys.argv)
+    appctxt = ApplicationContext()
     gallery = WidgetGallery()
     gallery.setMinimumSize(500,500)
     gallery.setMaximumSize(500,500)
-    gallery.setWindowTitle("Saturn v0.0.1")
-    gallery.setWindowIcon(QIcon("icon.ico"))
     gallery.show()
-    sys.exit(appctxt.exec_())
+    sys.exit(appctxt.app.exec_())
