@@ -166,7 +166,7 @@ class WidgetGallery(QDialog):
         added = source_keys - target_keys
         removed = target_keys - source_keys
         added = {i:self.source_df_dict[i] for i in added}
-        modified = {i : (self.source_df_dict[i], self.target_df_dict[i]) for i in intersect_keys if self.source_df_dict[i] != self.target_df_dict[i]}
+        modified = {i: (self.source_df_dict[i], self.target_df_dict[i]) for i in intersect_keys if self.source_df_dict[i] != self.target_df_dict[i]}
         same = {i: (self.source_df_dict[i], self.target_df_dict[i]) for i in intersect_keys if self.source_df_dict[i] == self.target_df_dict[i]}
         return added, removed, modified, same
 
@@ -186,7 +186,46 @@ class WidgetGallery(QDialog):
                         self.source_df_dict.update(dict({row["ScenarioName"]:row["ScenarioRunStatus"]}))
                         self.source_df_module_name.update(dict({row["ScenarioName"]:row["ModuleName"]}))
                         self.source_df_error.update(dict({row['ScenarioName']:row["Error"]}))
-                    break
+                    
+                #Cleaning the dictionary
+                dirtykeys=[]
+                for item in self.source_df_dict.keys():
+                    if item  == '':
+                        continue
+                    if (str(self.source_df_dict[item]) == 'Completed Sucessfully'):
+                        pass
+                    elif (str(self.source_df_dict[item]) == 'Completed With Errors'):
+                        pass
+                    elif (str(self.source_df_dict[item]) == 'Failed in Initial Run'):
+                        pass
+                    elif (str(self.source_df_dict[item]) =='Running'):
+                        pass
+                    elif (str(self.source_df_dict[item]) =='Failed in First Run'):
+                        pass
+                    else:
+                        dirtykeys.append(item)
+                
+                for item in dirtykeys:
+                    del self.source_df_dict[item]
+
+                dirtykeys=[]
+                for item in self.source_df_module_name.keys():
+                    if item  == '':
+                        continue
+                    if (self.source_df_module_name[item] == '') or (self.source_df_module_name[item] is None):
+                        dirtykeys.append(item)
+                for item in dirtykeys:
+                    del self.source_df_module_name[item]
+
+                dirtykeys=[]
+                for item in self.source_df_error.keys():
+                    if self.source_df_error[item] is None:
+                        dirtykeys.append(item)
+                for item in dirtykeys:
+                    del self.source_df_error[item]
+                
+                break
+
             except OverflowError:
                 maxInt = int(maxInt/10)
         #Target Data preprocessing
@@ -199,7 +238,44 @@ class WidgetGallery(QDialog):
                         self.target_df_dict.update(dict({row["ScenarioName"]:row["ScenarioRunStatus"]}))
                         self.target_df_modulename.update(dict({row["ScenarioName"]:row["ModuleName"]}))
                         self.target_df_error.update(dict({row['ScenarioName']:row["Error"]}))
-                    break
+                   
+                #Cleaning the dictionary
+                dirtykeys=[]
+                for item in self.target_df_dict.keys():
+                    if item  == '':
+                        continue
+                    if (str(self.target_df_dict[item]) == 'Completed Sucessfully'):
+                        pass
+                    elif (str(self.target_df_dict[item]) =='Completed With Errors'):
+                        pass
+                    elif (str(self.target_df_dict[item]) =='Failed in Initial Run'):
+                        pass
+                    elif (str(self.target_df_dict[item]) =='Running'):
+                        pass
+                    elif (str(self.target_df_dict[item]) =='Failed in First Run'):
+                        pass
+                    else:
+                        dirtykeys.append(item)
+                for item in dirtykeys:
+                    del self.target_df_dict[item]
+
+                dirtykeys=[]
+                for item in self.target_df_modulename.keys():
+                    if item  == '':
+                        continue
+                    if (self.target_df_modulename[item] == '') or (self.target_df_modulename[item] is None):
+                        dirtykeys.append(item)
+                for item in dirtykeys:
+                    del self.target_df_modulename[item]
+                
+                dirtykeys=[]
+                for item in self.target_df_error.keys():
+                    if self.target_df_error[item] is None :
+                        dirtykeys.append(item)
+                for item in dirtykeys:
+                    del self.target_df_error[item]
+                
+                break
             except OverflowError:
                 maxInt = int(maxInt/10)
         self.added, self.removed, self.modified, self.same = self.CSVComparer()
